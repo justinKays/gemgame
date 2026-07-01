@@ -93,13 +93,63 @@ Recommended next steps:
 
 ### Replit Hosting
 
-This project includes a `.replit` file that runs:
+This project includes a `.replit` file with both workspace and deployment run commands:
 
 ```bash
-python server.py --host 0.0.0.0 --port 8000
+python3 server.py --host 0.0.0.0
 ```
 
 Use a web-server deployment, not a static deployment, because the game needs `server.py` for rooms and WebSockets. In Replit, publish it as a Reserved VM for a small always-on multiplayer prototype. The included port mapping exposes local port `8000` as the public HTTPS site.
+
+If the Publishing tool still says `Run command is required`, enter this manually in the deployment `Run command` field:
+
+```bash
+python3 server.py --host 0.0.0.0
+```
+
+Leave the build command empty.
+
+### CI/CD
+
+Recommended professional workflow for this project:
+
+```text
+GitHub pull request -> GitHub Actions CI -> merge to main -> Render CD
+```
+
+Roles:
+
+- GitHub Actions is CI. It checks every push and pull request before code is trusted.
+- Render is CD and hosting. It runs the public web server and can deploy automatically after CI passes.
+- Replit is useful for quick prototypes and demos, but Render has a cleaner production-style GitHub deployment workflow for this app.
+
+This repo includes `.github/workflows/ci.yml`. The workflow:
+
+- Sets up Python 3.12.
+- Installs `requirements.txt`.
+- Runs the Python multiplayer/server tests.
+- Sets up Node 22.
+- Runs the JavaScript rule tests with `npm test`.
+
+The `requirements.txt` file is intentionally empty right now because the Python server uses only the standard library. It is still included so CI and hosting are ready for future dependencies. If a package is added later, put it in `requirements.txt`, for example:
+
+```text
+redis==5.0.8
+```
+
+Render setup:
+
+```text
+Service type: Web Service
+Build command: python -m pip install -r requirements.txt
+Start command: python server.py --host 0.0.0.0
+Auto-Deploy: After CI Checks Pass
+Instances: 1
+```
+
+The build command is harmless while `requirements.txt` is empty. It becomes useful as soon as real dependencies are added. The start command does not specify a port because `server.py` reads the hosting platform's `PORT` environment variable and falls back to `8000` locally.
+
+Keep the service at one instance for now. Rooms are stored in server memory, so multiple instances would split players across different room states unless room state is moved to Redis or a database.
 
 ## Test
 
@@ -131,6 +181,8 @@ No package install step is required.
 - `src/app.js` - browser WebSocket client and rendering.
 - `src/game.js` - shared gem metadata and browser-testable rule helpers.
 - `assets/` - gem SVG artwork.
+- `.github/workflows/ci.yml` - GitHub Actions CI for Python and JavaScript tests.
+- `requirements.txt` - Python dependency list, intentionally empty until external packages are added.
 - `tests/test_server.py` - authoritative multiplayer unit tests.
 - `tests/game.test.js` - optional Node rule tests.
 - `tests/browser-test.html` - dependency-free browser test runner.
