@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gem Duel</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <img src="./assets/gem-a.svg" alt="">
+        </div>
+        <div>
+          <h1>Gem Duel</h1>
+          <p id="statusText">Connecting to multiplayer server...</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button class="ghost-button" id="restartGameButton" type="button" hidden>Restart match</button>
+        <button class="ghost-button" id="leaveButton" type="button" hidden>Leave room</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="lobby-panel" id="lobbyPanel" aria-labelledby="lobbyTitle">
+        <div>
+          <p class="eyebrow">Multiplayer</p>
+          <h2 id="lobbyTitle">Create or join a room</h2>
+          <p class="muted">Each player uses a separate browser. Choices stay hidden until both players lock in.</p>
+        </div>
+        <div class="lobby-actions">
+          <button class="primary-action" id="createRoomButton" type="button">Create room</button>
+          <form class="join-form" id="joinForm">
+            <label for="roomCodeInput">Room code</label>
+            <div class="join-row">
+              <input id="roomCodeInput" name="roomCode" autocomplete="off" maxlength="8" placeholder="ABCDE">
+              <button class="primary-action" type="submit">Join</button>
+            </div>
+          </form>
+        </div>
+        <p class="error-text" id="errorText" role="alert"></p>
+      </section>
+
+      <section class="room-strip" id="roomStrip" hidden>
+        <div>
+          <p class="eyebrow">Room</p>
+          <h2 id="roomCodeLabel">-----</h2>
+        </div>
+        <div class="room-link-group">
+          <input id="roomLinkInput" readonly aria-label="Room invite link">
+          <button class="ghost-button" id="copyLinkButton" type="button">Copy link</button>
+        </div>
+      </section>
+
+      <section class="game-layout" id="gameLayout" hidden>
+        <article class="player-panel self-panel" aria-labelledby="selfTitle">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" id="selfEyebrow">Your seat</p>
+              <h2 id="selfTitle">Target</h2>
+            </div>
+            <p class="seat-badge" id="selfSeatBadge">P1</p>
+          </div>
+          <div class="target-slot" id="targetSlot"></div>
+          <div class="private-note" id="targetHint"></div>
+          <div class="target-score" id="ownTargetScore"></div>
+          <div class="inventory" id="ownInventory" aria-label="Your inventory"></div>
+        </article>
+
+        <article class="board-panel" aria-labelledby="boardTitle">
+          <div class="round-head">
+            <p class="phase-badge" id="phaseBadge">Waiting</p>
+            <h2 id="boardTitle">Waiting for player 2</h2>
+            <p id="roundMessage">Share the room link with the other player.</p>
+          </div>
+          <div class="offer-grid" id="offerGrid" aria-label="Current round offer"></div>
+          <div class="choice-area">
+            <div class="choice-status" id="choiceStatus">Waiting for match</div>
+            <div class="choice-grid" id="choiceGrid"></div>
+          </div>
+          <div class="result-panel" id="resultPanel" aria-live="polite"></div>
+          <button class="primary-action next-action" id="nextRoundButton" type="button" hidden>Next round starts automatically</button>
+        </article>
+
+        <article class="player-panel opponent-panel" aria-labelledby="opponentTitle">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Opponent</p>
+              <h2 id="opponentTitle">Unknown target</h2>
+            </div>
+            <p class="seat-badge" id="opponentSeatBadge">P2</p>
+          </div>
+          <div class="target-slot" id="opponentTargetSlot"></div>
+          <div class="private-note" id="opponentHint"></div>
+          <div class="target-score" id="opponentReadyStatus"></div>
+          <div class="inventory" id="opponentInventory" aria-label="Opponent inventory"></div>
+        </article>
+      </section>
+
+      <aside class="ledger" id="ledger" aria-labelledby="ledgerTitle" hidden>
+        <div>
+          <p class="eyebrow">Match</p>
+          <h2 id="ledgerTitle">Round log</h2>
+        </div>
+        <div class="fairness-strip" id="fairnessStrip"></div>
+        <ol class="round-log" id="roundLog"></ol>
+      </aside>
+    </main>
+
+    <script src="./src/game.js"></script>
+    <script src="./src/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,136 @@
+# Gem Duel
+
+Gem Duel is a simple full multiplayer 1v1 browser game. A Python server hosts the page and owns the match state over WebSockets, so each player opens a separate browser view and cannot see the other player's locked move until the round resolves.
+
+## Prompt Analysis And Rule Improvements
+
+The original idea has a strong hidden-information mechanic: players know their own target gem, know the opponent's target pool, and must decide whether to take their own target or block the opponent. The first prototype was local same-screen multiplayer, which did not preserve hidden moves. This version fixes that by making the server authoritative.
+
+Clarified rules:
+
+- Player 1's target is randomly selected from A or B.
+- Player 2's target is randomly selected from C or D.
+- Each player receives only their own exact target until the match is complete.
+- Each player only knows the opponent target is one of the opponent's two possible gems.
+- A match lasts exactly 8 rounds.
+- Each round offers at least one A, one B, one C, and one D.
+- Each gem count per round is between 1 and 7.
+- Round total copies climb as `6, 8, 10, 12, 14, 15, 17, 18`.
+- Early rounds stay fairly even, while late rounds have larger and more uneven offers.
+- Extra gem copies are distributed so every gem appears exactly 25 times across the full match.
+- Each player chooses one available gem type. Choices are locked privately on the server.
+- If both players choose the same gem type, neither player collects a gem that round.
+- If players choose different gem types, each player collects the full shown count of the chosen type.
+- After both players choose, the server broadcasts both choices and the result.
+- After a short reveal delay, the server automatically moves to the next round.
+- Restarting the match requires both players to click restart.
+- The winner is the player with the higher count of their own target gem after 8 rounds. Equal target counts produce a draw.
+
+## Implementation Plan
+
+- Use `server.py` as a dependency-free Python HTTP/WebSocket server.
+- Keep all authoritative state on the server: room seats, private targets, hidden selections, inventories, round logs, and winner calculation.
+- Automatically advance after each resolved round, while keeping two-player agreement for match restart.
+- Serve one browser client from `index.html`, `styles.css`, and `src/app.js`.
+- Use room codes and invite links so two browser windows or two devices on the same network can join.
+- Keep `src/game.js` as a small shared browser-side rules module for gem metadata and dependency-free rule tests.
+- Add Python unit tests for authoritative multiplayer behavior and browser tests for schedule/rule invariants.
+
+## Run
+
+Start the multiplayer server from the project folder:
+
+```powershell
+cd C:\Users\tjdjs\Documents\codex_gemgame
+python server.py --host 0.0.0.0 --port 8000
+```
+
+On the same computer, open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+On another device on the same Wi-Fi/LAN, open the host computer's LAN IPv4 address:
+
+```text
+http://<your IPv4 address>:8000/
+```
+
+Example:
+
+```text
+http://172.30.1.1:8000/
+```
+
+Click `Create room`, then open the generated room link in another browser tab, another browser profile, or another device.
+
+Quick IP notes:
+
+- `127.0.0.1` / `localhost` means "this same device only."
+- `0.0.0.0` is only for the server `--host`; it means "listen on all network interfaces." Do not use it as the browser URL.
+- Your LAN IPv4 address is what other devices use, for example `172.30.1.1`.
+- On Windows, find it with `ipconfig`, then look under `Wireless LAN adapter Wi-Fi` for `IPv4 Address`.
+- A subnet mask like `255.255.255.0` is the same idea as `/24`; it describes which nearby IPs are on your local network.
+- The gateway is usually the router/hotspot, often `.1` or `.254`. `.255` is commonly the broadcast address, so it is not normally assigned to a device.
+
+If another device cannot connect, make sure both devices are on the same Wi-Fi/LAN and allow Python or TCP port `8000` through Windows Firewall on a Private network. This is still a LAN setup; internet play needs a publicly reachable hosted server with WebSocket support.
+
+## App And Publishing Path
+
+Current build:
+
+- Works on the same machine with `127.0.0.1`.
+- Works on the same Wi-Fi/LAN if the server binds to `0.0.0.0` and firewall rules allow the port.
+- Does not automatically work over the public internet because home routers, NAT, firewalls, and dynamic IPs block inbound connections.
+
+Recommended next steps:
+
+- For web internet play: deploy the Python server to a VPS or platform that supports long-lived WebSockets, then serve the same frontend over HTTPS/WSS.
+- For a quick hosted prototype: Replit can run this as a published web-server app. Use Reserved VM for the simplest always-on setup; use Autoscale only with one machine unless the room state is moved out of memory.
+- For a desktop app: wrap the browser client with Tauri, Electron, or a native shell, but still use a hosted matchmaking/game server for internet multiplayer.
+- For Steam: package the desktop client, create a Steamworks app, integrate Steam sign-in/invites later if desired, and keep the game server hosted separately.
+
+### Replit Hosting
+
+This project includes a `.replit` file that runs:
+
+```bash
+python server.py --host 0.0.0.0 --port 8000
+```
+
+Use a web-server deployment, not a static deployment, because the game needs `server.py` for rooms and WebSockets. In Replit, publish it as a Reserved VM for a small always-on multiplayer prototype. The included port mapping exposes local port `8000` as the public HTTPS site.
+
+## Test
+
+Run authoritative server tests:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+Open dependency-free browser rule checks:
+
+```text
+http://127.0.0.1:8000/tests/browser-test.html
+```
+
+If Node and npm are available, the JavaScript rule tests can also be run with:
+
+```bash
+npm test
+```
+
+No package install step is required.
+
+## Project Structure
+
+- `server.py` - HTTP server, WebSocket transport, room management, authoritative game rules.
+- `index.html` - multiplayer lobby and game screen markup.
+- `styles.css` - responsive game UI.
+- `src/app.js` - browser WebSocket client and rendering.
+- `src/game.js` - shared gem metadata and browser-testable rule helpers.
+- `assets/` - gem SVG artwork.
+- `tests/test_server.py` - authoritative multiplayer unit tests.
+- `tests/game.test.js` - optional Node rule tests.
+- `tests/browser-test.html` - dependency-free browser test runner.

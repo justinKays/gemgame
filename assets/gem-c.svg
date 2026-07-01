@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title>Sapphire gem C</title>
+  <path d="M22 16h52l16 24-42 44L6 40z" fill="#2d6cdf" stroke="#17263d" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M22 16l12 24H6z" fill="#91c8ff"/>
+  <path d="M34 40h28L48 84z" fill="#204fba"/>
+  <path d="M62 40l12-24 16 24z" fill="#153d91"/>
+  <path d="M22 16h52L62 40H34z" fill="#65a6ff"/>
+  <path d="M34 40L48 84 6 40z" fill="#2d6cdf" opacity=".9"/>
+  <path d="M62 40L48 84l42-44z" fill="#173f99" opacity=".8"/>
+</svg>

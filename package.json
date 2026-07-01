@@ -1,0 +1,9 @@
+{
+  "name": "gem-duel",
+  "version": "1.0.0",
+  "description": "A simple server-authoritative 1v1 multiplayer gem collection game.",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
