@@ -39,7 +39,6 @@
     roundMessage: document.getElementById("roundMessage"),
     offerGrid: document.getElementById("offerGrid"),
     choiceStatus: document.getElementById("choiceStatus"),
-    choiceGrid: document.getElementById("choiceGrid"),
     resultPanel: document.getElementById("resultPanel"),
     nextRoundButton: document.getElementById("nextRoundButton"),
     fairnessStrip: document.getElementById("fairnessStrip"),
@@ -80,6 +79,10 @@
 
   function gemImage(gemId) {
     return '<img src="' + assetPath(gemId) + '" alt="' + gemName(gemId) + '">';
+  }
+
+  function canChooseGem(state) {
+    return state.phase === "choosing" && state.connected.p1 && state.connected.p2 && !state.ownSelection;
   }
 
   function poolText(pool) {
@@ -211,21 +214,27 @@
   }
 
   function renderOffer(state) {
+    var canChoose = canChooseGem(state);
     elements.offerGrid.innerHTML = Game.GEMS.map(function mapOffer(gemId) {
+      var isSelected = state.ownSelection === gemId;
+      var disabled = !canChoose || state.availableGems.indexOf(gemId) === -1;
       return [
-        '<div class="offer-tile">',
+        '<button class="offer-tile' + (canChoose ? " offer-choice" : "") + (isSelected ? " selected" : "") + '" type="button" data-gem="' + gemId + '"' + (disabled ? " disabled" : "") + ' aria-label="Choose ' + gemName(gemId) + ', count ' + state.offer[gemId] + '">',
+        '<span class="offer-gem">',
         gemImage(gemId),
+        '<span class="offer-count">' + state.offer[gemId] + "</span>",
+        "</span>",
         "<strong>" + gemLabel(gemId) + "</strong>",
-        "<span>x" + state.offer[gemId] + "</span>",
-        "</div>"
+        "</button>"
       ].join("");
     }).join("");
   }
 
   function renderChoices(state) {
-    var canChoose = state.phase === "choosing" && state.connected.p1 && state.connected.p2 && !state.ownSelection;
     if (state.phase === "waiting") {
       elements.choiceStatus.textContent = "Waiting for player 2";
+    } else if (state.phase === "choosing" && (!state.connected.p1 || !state.connected.p2)) {
+      elements.choiceStatus.textContent = "Waiting for both players to connect";
     } else if (state.phase === "choosing" && state.ownSelection) {
       elements.choiceStatus.textContent = "Choice locked: " + gemLabel(state.ownSelection);
     } else if (state.phase === "choosing") {
@@ -235,15 +244,6 @@
     } else {
       elements.choiceStatus.textContent = "Match complete";
     }
-
-    elements.choiceGrid.innerHTML = state.availableGems.map(function mapChoice(gemId) {
-      return [
-        '<button class="choice-button" type="button" data-gem="' + gemId + '"' + (canChoose ? "" : " disabled") + ">",
-        gemImage(gemId),
-        "<span>" + gemLabel(gemId) + "</span>",
-        "</button>"
-      ].join("");
-    }).join("");
   }
 
   function describeGain(result, player) {
@@ -302,9 +302,22 @@
     if (state.phase === "complete") {
       var p1Score = state.targetScores.p1;
       var p2Score = state.targetScores.p2;
+      var selfScore = state.targetScores[self];
+      var opponentScore = state.targetScores[opponent];
+      var outcomeClass = state.winner === "draw"
+        ? "outcome-draw"
+        : state.winner === self
+          ? "outcome-win"
+          : "outcome-loss";
+      var outcomeText = state.winner === "draw"
+        ? "Draw"
+        : state.winner === self
+          ? "You won"
+          : "You lost";
       var winnerText = state.winner === "draw"
-        ? "Draw. Both target scores are " + p1Score + "."
+        ? "Both target scores are " + p1Score + "."
         : playerLabel(state.winner) + " wins with target scores " + p1Score + " to " + p2Score + ".";
+      html.push('<div class="final-outcome ' + outcomeClass + '"><strong>' + outcomeText + '</strong><span>Your target score: ' + selfScore + '. Opponent target score: ' + opponentScore + ".</span></div>");
       html.push('<div class="winner-callout">' + winnerText + "</div>");
     } else {
       html.push('<div class="' + (result.collision ? "winner-callout collision-callout" : "winner-callout") + '">' + (result.collision ? "Collision" : "Collected") + "</div>");
@@ -365,7 +378,11 @@
       elements.boardTitle.textContent = "Waiting for player 2";
       elements.roundMessage.textContent = "Share the room link with another browser.";
     } else if (state.phase === "complete") {
-      elements.boardTitle.textContent = "Final result";
+      elements.boardTitle.textContent = state.winner === "draw"
+        ? "Draw"
+        : state.winner === self
+          ? "You won"
+          : "You lost";
       elements.roundMessage.textContent = "The match is complete.";
     } else if (state.phase === "resolved") {
       elements.boardTitle.textContent = "Round " + state.roundNumber + " result";
@@ -449,8 +466,8 @@
     send({ type: "join", roomCode: elements.roomCodeInput.value });
   });
 
-  elements.choiceGrid.addEventListener("click", function chooseGem(event) {
-    var button = event.target.closest(".choice-button");
+  elements.offerGrid.addEventListener("click", function chooseGem(event) {
+    var button = event.target.closest(".offer-tile[data-gem]");
     if (!button || button.disabled) {
       return;
     }

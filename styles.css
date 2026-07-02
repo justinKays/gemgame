@@ -118,7 +118,7 @@ h3 {
 
 .primary-action,
 .ghost-button,
-.choice-button {
+.offer-tile {
   min-height: 42px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -143,13 +143,13 @@ h3 {
 
 .primary-action:hover,
 .ghost-button:hover,
-.choice-button:hover:not(:disabled) {
+.offer-tile:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 .primary-action:focus-visible,
 .ghost-button:focus-visible,
-.choice-button:focus-visible,
+.offer-tile:focus-visible,
 input:focus-visible {
   outline: 3px solid rgba(45, 108, 223, 0.28);
   outline-offset: 2px;
@@ -375,8 +375,7 @@ input {
   gap: 10px;
 }
 
-.offer-tile,
-.choice-button {
+.offer-tile {
   display: grid;
   place-items: center;
   gap: 7px;
@@ -385,21 +384,57 @@ input {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+  color: var(--ink);
+  font-weight: 850;
 }
 
-.offer-tile img,
-.choice-button img {
-  width: 46px;
-  height: 46px;
+.offer-gem {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+}
+
+.offer-gem img {
+  width: 56px;
+  height: 56px;
+}
+
+.offer-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 1.35rem;
+  font-weight: 950;
+  line-height: 1;
+  text-shadow:
+    0 2px 6px rgba(29, 32, 39, 0.72),
+    0 0 2px rgba(29, 32, 39, 0.9);
 }
 
 .offer-tile strong {
   font-size: 1.25rem;
 }
 
-.offer-tile span {
-  color: var(--muted);
-  font-weight: 750;
+.offer-tile.offer-choice:not(:disabled):hover {
+  border-color: rgba(45, 108, 223, 0.65);
+  background: rgba(45, 108, 223, 0.08);
+}
+
+.offer-tile.selected {
+  border-color: rgba(45, 108, 223, 0.8);
+  background: rgba(45, 108, 223, 0.12);
+}
+
+.offer-tile:disabled {
+  cursor: default;
+}
+
+.offer-tile:disabled:not(.selected) {
+  opacity: 0.82;
 }
 
 .choice-area {
@@ -410,27 +445,6 @@ input {
 .choice-status {
   min-height: 22px;
   font-weight: 750;
-}
-
-.choice-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.choice-button {
-  color: var(--ink);
-  font-weight: 850;
-}
-
-.choice-button:not(:disabled):hover {
-  border-color: rgba(45, 108, 223, 0.65);
-  background: rgba(45, 108, 223, 0.08);
-}
-
-.choice-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.58;
 }
 
 .result-panel {
@@ -475,6 +489,39 @@ input {
 }
 
 .collision-callout {
+  background: rgba(184, 109, 0, 0.12);
+  color: #7a4700;
+}
+
+.final-outcome {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 16px;
+  border-radius: 8px;
+  font-weight: 850;
+}
+
+.final-outcome strong {
+  font-size: clamp(1.45rem, 5vw, 2.25rem);
+  line-height: 1;
+}
+
+.final-outcome span {
+  font-weight: 750;
+}
+
+.outcome-win {
+  background: rgba(29, 143, 90, 0.12);
+  color: #11603c;
+}
+
+.outcome-loss {
+  background: rgba(180, 53, 85, 0.12);
+  color: #8f2340;
+}
+
+.outcome-draw {
   background: rgba(184, 109, 0, 0.12);
   color: #7a4700;
 }
@@ -557,7 +604,6 @@ input {
   }
 
   .offer-grid,
-  .choice-grid,
   .fairness-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

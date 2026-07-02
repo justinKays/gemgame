@@ -126,6 +126,7 @@ def _can_complete_profile(round_index: int, remaining: dict[str, int]) -> bool:
     max_future = sum(max(profile) for profile in future_profiles)
     return all(min_future <= remaining[gem_id] <= max_future for gem_id in GEMS)
 
+
 def validate_schedule(rounds: list[dict[str, int]]) -> tuple[bool, dict[str, int], list[str]]:
     totals = empty_counts()
     errors: list[str] = []
@@ -203,7 +204,13 @@ class GameRoom:
             rounds=rounds,
         )
 
-    def connect(self, player: str, client: "WebSocketConnection", token: str | None = None) -> str:
+    def connect(
+        self,
+        player: str,
+        client: "WebSocketConnection",
+        token: str | None = None,
+        allow_takeover: bool = False,
+    ) -> str:
         if player not in PLAYERS:
             raise GameError("Unknown player seat.")
 
@@ -215,6 +222,14 @@ class GameRoom:
             if seat.client and seat.client is not client:
                 seat.client.detach()
             seat.client = client
+        elif seat.client is None or allow_takeover:
+            if seat.client and seat.client is not client:
+                seat.client.detach()
+            seat = Seat(token=secrets.token_urlsafe(18), client=client)
+            self.seats[player] = seat
+            self.selections[player] = None
+            self.next_ready[player] = False
+            self.restart_ready[player] = False
         else:
             raise GameError("That player seat is already taken.")
 
@@ -232,6 +247,19 @@ class GameRoom:
 
     def connected(self) -> dict[str, bool]:
         return {player: bool(self.seats[player] and self.seats[player].client) for player in PLAYERS}
+
+    def player_for_token(self, token: str | None) -> str | None:
+        if not token:
+            return None
+        for player in PLAYERS:
+            seat = self.seats[player]
+            if seat and secrets.compare_digest(seat.token, token):
+                return player
+        return None
+
+    def can_claim_without_token(self, player: str) -> bool:
+        seat = self.seats[player]
+        return seat is None or seat.client is None
 
     def current_round(self) -> dict[str, int]:
         return clone_counts(self.rounds[self.round_index])
@@ -415,17 +443,29 @@ class GameHub:
                 raise GameError("Room not found.")
 
             chosen_player = player
+            allow_takeover = False
             if chosen_player is None:
-                if room.seats["p2"] is None:
+                token_player = room.player_for_token(token)
+                if token_player:
+                    chosen_player = token_player
+                elif room.can_claim_without_token("p2"):
                     chosen_player = "p2"
-                elif token and room.seats["p1"] and secrets.compare_digest(room.seats["p1"].token, token):
-                    chosen_player = "p1"
-                elif token and room.seats["p2"] and secrets.compare_digest(room.seats["p2"].token, token):
+                elif room.seats["p2"] is not None:
                     chosen_player = "p2"
+                    allow_takeover = True
                 else:
                     raise GameError("Room is full.")
+            elif chosen_player == "p2" and room.player_for_token(token) != "p2":
+                allow_takeover = True
 
-            joined_token = room.connect(chosen_player, client, token=token)
+            matching_token_player = room.player_for_token(token)
+            connect_token = token if matching_token_player == chosen_player else None
+            joined_token = room.connect(
+                chosen_player,
+                client,
+                token=connect_token,
+                allow_takeover=allow_takeover,
+            )
             client.send_json(
                 {"type": "joined", "roomCode": room.code, "player": chosen_player, "token": joined_token}
             )

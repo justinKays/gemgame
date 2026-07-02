@@ -8,6 +8,7 @@ from server import (
     ROUND_COUNT,
     ROUND_PROFILES,
     GameError,
+    GameHub,
     GameRoom,
     empty_counts,
     generate_rounds,
@@ -24,6 +25,15 @@ class DummyClient:
 
     def detach(self):
         self.detached = True
+
+
+class RecordingClient(DummyClient):
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+
+    def send_json(self, payload):
+        self.messages.append(payload)
 
 
 def even_rounds():
@@ -113,6 +123,55 @@ class MultiplayerPrivacyTests(unittest.TestCase):
         self.assertEqual(p1_snapshot["lastResult"]["gainCounts"], {"p1": 0, "p2": 0})
         self.assertEqual(p1_snapshot["collected"]["p1"], empty_counts())
         self.assertEqual(p1_snapshot["collected"]["p2"], empty_counts())
+
+    def test_disconnected_second_player_seat_can_be_reclaimed(self):
+        hub = GameHub()
+        room = GameRoom(
+            code="STALE",
+            seed="test-seed",
+            targets={"p1": "a", "p2": "c"},
+            rounds=even_rounds(),
+        )
+        hub.rooms[room.code] = room
+        p1_client = RecordingClient()
+        stale_p2_client = RecordingClient()
+        new_p2_client = RecordingClient()
+
+        room.connect("p1", p1_client)
+        old_token = room.connect("p2", stale_p2_client)
+        room.disconnect(stale_p2_client)
+
+        hub.join_room(new_p2_client, room.code)
+
+        self.assertEqual(new_p2_client.messages[0]["type"], "joined")
+        self.assertEqual(new_p2_client.messages[0]["player"], "p2")
+        self.assertNotEqual(new_p2_client.messages[0]["token"], old_token)
+        self.assertIs(room.seats["p2"].client, new_p2_client)
+        self.assertTrue(room.connected()["p2"])
+
+    def test_second_player_join_transfers_existing_p2_seat(self):
+        hub = GameHub()
+        room = GameRoom(
+            code="GHOST",
+            seed="test-seed",
+            targets={"p1": "a", "p2": "c"},
+            rounds=even_rounds(),
+        )
+        hub.rooms[room.code] = room
+        p1_client = RecordingClient()
+        ghost_p2_client = RecordingClient()
+        new_p2_client = RecordingClient()
+
+        room.connect("p1", p1_client)
+        room.connect("p2", ghost_p2_client)
+
+        hub.join_room(new_p2_client, room.code)
+
+        self.assertTrue(ghost_p2_client.detached)
+        self.assertEqual(new_p2_client.messages[0]["type"], "joined")
+        self.assertEqual(new_p2_client.messages[0]["player"], "p2")
+        self.assertIs(room.seats["p2"].client, new_p2_client)
+        self.assertTrue(room.connected()["p2"])
 
 
 class MultiplayerGameplayTests(unittest.TestCase):
