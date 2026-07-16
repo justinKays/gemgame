@@ -1,7 +1,15 @@
 (function bootMultiplayerGemDuel() {
   "use strict";
 
-  var Game = window.GemGame;
+  var GEM_DEFINITIONS = [
+    { id: "a", label: "A", name: "Amber" },
+    { id: "b", label: "B", name: "Emerald" },
+    { id: "c", label: "C", name: "Sapphire" },
+    { id: "d", label: "D", name: "Ruby" }
+  ];
+  var GEMS = GEM_DEFINITIONS.map(function mapGem(gem) {
+    return gem.id;
+  });
   var socket = null;
   var latestState = null;
   var joinedRoom = null;
@@ -40,7 +48,6 @@
     offerGrid: document.getElementById("offerGrid"),
     choiceStatus: document.getElementById("choiceStatus"),
     resultPanel: document.getElementById("resultPanel"),
-    nextRoundButton: document.getElementById("nextRoundButton"),
     fairnessStrip: document.getElementById("fairnessStrip"),
     roundLog: document.getElementById("roundLog")
   };
@@ -65,7 +72,13 @@
   }
 
   function getGem(gemId) {
-    return Game.getGem(gemId);
+    var gem = GEM_DEFINITIONS.find(function findGem(candidate) {
+      return candidate.id === gemId;
+    });
+    if (!gem) {
+      throw new Error("Unknown gem: " + gemId);
+    }
+    return gem;
   }
 
   function gemLabel(gemId) {
@@ -141,8 +154,6 @@
         var saved = loadSession(queryRoom.toUpperCase());
         if (saved && saved.player && saved.token && !forceJoin) {
           send({ type: "join", roomCode: queryRoom, player: saved.player, token: saved.token });
-        } else if (forceJoin) {
-          send({ type: "join", roomCode: queryRoom, player: "p2" });
         } else {
           send({ type: "join", roomCode: queryRoom });
         }
@@ -179,7 +190,24 @@
     var nextUrl = new URL(window.location.href);
     nextUrl.searchParams.set("room", roomCode);
     nextUrl.searchParams.delete("join");
+    nextUrl.searchParams.delete("player");
     window.history.replaceState(null, "", nextUrl.toString());
+  }
+
+  function showCopyResult(copied) {
+    elements.copyLinkButton.textContent = copied ? "Copied" : "Copy failed";
+    window.setTimeout(function resetCopyLabel() {
+      elements.copyLinkButton.textContent = "Copy link";
+    }, 1200);
+  }
+
+  function copyRoomLinkFallback() {
+    elements.roomLinkInput.select();
+    try {
+      return document.execCommand("copy");
+    } catch (error) {
+      return false;
+    }
   }
 
   function renderTarget(gemId) {
@@ -202,7 +230,7 @@
   }
 
   function renderInventory(container, counts) {
-    container.innerHTML = Game.GEMS.map(function mapInventory(gemId) {
+    container.innerHTML = GEMS.map(function mapInventory(gemId) {
       return [
         '<div class="inventory-item">',
         gemImage(gemId),
@@ -215,7 +243,7 @@
 
   function renderOffer(state) {
     var canChoose = canChooseGem(state);
-    elements.offerGrid.innerHTML = Game.GEMS.map(function mapOffer(gemId) {
+    elements.offerGrid.innerHTML = GEMS.map(function mapOffer(gemId) {
       var isSelected = state.ownSelection === gemId;
       var disabled = !canChoose || state.availableGems.indexOf(gemId) === -1;
       return [
@@ -332,7 +360,7 @@
   }
 
   function renderFairness(state) {
-    elements.fairnessStrip.innerHTML = Game.GEMS.map(function mapFairness(gemId) {
+    elements.fairnessStrip.innerHTML = GEMS.map(function mapFairness(gemId) {
       return [
         '<div class="fairness-item">',
         gemImage(gemId),
@@ -392,9 +420,6 @@
       elements.roundMessage.textContent = "Every gem appears at least once this round. Locked choices stay private.";
     }
 
-    elements.nextRoundButton.hidden = true;
-    elements.nextRoundButton.disabled = true;
-    elements.nextRoundButton.textContent = "Next round starts automatically";
     elements.restartGameButton.hidden = false;
     elements.restartGameButton.disabled = Boolean(state.restartReady[self]) || !state.connected[opponent];
     elements.restartGameButton.textContent = state.restartReady[self]
@@ -406,7 +431,7 @@
     var link = new URL(window.location.href);
     link.searchParams.set("room", state.roomCode);
     link.searchParams.set("join", "1");
-    link.searchParams.set("player", "p2");
+    link.searchParams.delete("player");
     elements.roomCodeLabel.textContent = state.roomCode;
     elements.roomLinkInput.value = link.toString();
   }
@@ -474,25 +499,28 @@
     send({ type: "choose", gem: button.dataset.gem });
   });
 
-  elements.nextRoundButton.addEventListener("click", function nextRound() {
-    send({ type: "nextRound" });
-  });
-
   elements.restartGameButton.addEventListener("click", function restartGame() {
     send({ type: "restart" });
   });
 
   elements.copyLinkButton.addEventListener("click", function copyRoomLink() {
-    elements.roomLinkInput.select();
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(elements.roomLinkInput.value);
-    } else {
-      document.execCommand("copy");
+      try {
+        Promise.resolve(navigator.clipboard.writeText(elements.roomLinkInput.value)).then(
+          function copySucceeded() {
+            showCopyResult(true);
+          },
+          function copyFailed() {
+            showCopyResult(copyRoomLinkFallback());
+          }
+        );
+        return;
+      } catch (error) {
+        showCopyResult(copyRoomLinkFallback());
+        return;
+      }
     }
-    elements.copyLinkButton.textContent = "Copied";
-    window.setTimeout(function resetCopyLabel() {
-      elements.copyLinkButton.textContent = "Copy link";
-    }, 1200);
+    showCopyResult(copyRoomLinkFallback());
   });
 
   elements.leaveButton.addEventListener("click", function leaveRoom() {

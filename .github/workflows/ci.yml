@@ -33,5 +33,5 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Run JavaScript tests
-        run: npm test
+      - name: Run browser client tests
+        run: node --test tests/app.test.js

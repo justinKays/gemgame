@@ -1,4 +1,5 @@
 import base64
+import http.client
 import json
 import os
 import socket
@@ -9,7 +10,13 @@ import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from server import GameHub, make_handler
+from server import (
+    WEBSOCKET_CLOSE_INVALID_PAYLOAD,
+    WEBSOCKET_CLOSE_PROTOCOL_ERROR,
+    GameHub,
+    empty_counts,
+    make_handler,
+)
 
 
 class WebSocketTestClient:
@@ -22,6 +29,7 @@ class WebSocketTestClient:
             f"Host: {host}:{port}\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
+            f"Origin: http://{host}:{port}\r\n"
             f"Sec-WebSocket-Key: {key}\r\n"
             "Sec-WebSocket-Version: 13\r\n"
             "\r\n"
@@ -40,11 +48,33 @@ class WebSocketTestClient:
     def send_json(self, payload):
         self._send_text(json.dumps(payload, separators=(",", ":")))
 
+    def send_text(self, text):
+        self._send_text(text)
+
+    def send_unmasked_text(self, text):
+        payload = text.encode("utf-8")
+        length = len(payload)
+        if length >= 126:
+            raise ValueError("Test helper only supports short payloads")
+        self.socket.sendall(struct.pack("!BB", 0x81, length) + payload)
+
+    def send_reserved_bit_text(self, text):
+        self._send_text(text, first_byte=0xC1)
+
+    def send_invalid_utf8(self):
+        self._send_payload(b"\xff")
+
     def read_json(self):
         opcode, payload = self._read_frame()
         if opcode != 0x1:
             raise AssertionError(f"Expected text frame, got opcode {opcode}")
         return json.loads(payload.decode("utf-8"))
+
+    def read_close_code(self):
+        opcode, payload = self._read_frame()
+        if opcode != 0x8 or len(payload) < 2:
+            raise AssertionError(f"Expected close frame with status, got opcode {opcode} and {payload!r}")
+        return struct.unpack("!H", payload[:2])[0]
 
     def read_until(self, predicate, timeout=3):
         deadline = time.time() + timeout
@@ -83,10 +113,11 @@ class WebSocketTestClient:
         payload = self._read_exact(length) if length else b""
         return opcode, payload
 
-    def _send_text(self, text):
-        payload = text.encode("utf-8")
+    def _send_text(self, text, first_byte=0x81):
+        self._send_payload(text.encode("utf-8"), first_byte=first_byte)
+
+    def _send_payload(self, payload, first_byte=0x81):
         mask = os.urandom(4)
-        first_byte = 0x81
         length = len(payload)
         if length < 126:
             header = struct.pack("!BB", first_byte, length | 0x80)
@@ -119,6 +150,182 @@ class WebSocketIntegrationTests(unittest.TestCase):
         client = WebSocketTestClient(self.host, self.port)
         self.clients.append(client)
         return client
+
+    def http_status(self, path):
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=3)
+        try:
+            connection.request("GET", path)
+            response = connection.getresponse()
+            response.read()
+            return response.status
+        finally:
+            connection.close()
+
+    def websocket_handshake_status(self, key, version="13", origin=None):
+        connection = socket.create_connection((self.host, self.port), timeout=3)
+        try:
+            request_origin = origin or f"http://{self.host}:{self.port}"
+            request = (
+                "GET /ws HTTP/1.1\r\n"
+                f"Host: {self.host}:{self.port}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Origin: {request_origin}\r\n"
+                f"Sec-WebSocket-Key: {key}\r\n"
+                f"Sec-WebSocket-Version: {version}\r\n"
+                "\r\n"
+            )
+            connection.sendall(request.encode("ascii"))
+            response = bytearray()
+            while b"\r\n\r\n" not in response:
+                chunk = connection.recv(4096)
+                if not chunk:
+                    break
+                response.extend(chunk)
+            status_line = bytes(response).split(b"\r\n", 1)[0]
+            return int(status_line.split()[1])
+        finally:
+            connection.close()
+
+    def test_static_server_exposes_only_public_paths(self):
+        self.assertEqual(self.http_status("/"), 200)
+        self.assertEqual(self.http_status("/assets/gem-a.svg"), 200)
+        self.assertEqual(self.http_status("/src/app.js"), 200)
+        self.assertEqual(self.http_status("/src/game.js"), 404)
+        self.assertEqual(self.http_status("/tests/browser-test.html"), 404)
+        self.assertEqual(self.http_status("/server.py"), 404)
+        self.assertEqual(self.http_status("/tests/test_server.py"), 404)
+        self.assertEqual(self.http_status("/.git/config"), 404)
+        self.assertEqual(self.http_status("/src/../server.py"), 404)
+
+    def test_unmasked_websocket_frames_are_rejected(self):
+        client = self.client()
+
+        client.send_unmasked_text('{"type":"create"}')
+
+        self.assertEqual(client.read_close_code(), WEBSOCKET_CLOSE_PROTOCOL_ERROR)
+
+    def test_invalid_websocket_handshake_key_is_rejected(self):
+        self.assertEqual(self.websocket_handshake_status("not-a-valid-key"), 400)
+
+    def test_cross_origin_websocket_handshake_is_rejected(self):
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+
+        self.assertEqual(
+            self.websocket_handshake_status(key, origin="https://example.com"),
+            403,
+        )
+
+    def test_reserved_websocket_bits_are_rejected(self):
+        client = self.client()
+
+        client.send_reserved_bit_text('{"type":"create"}')
+
+        self.assertEqual(client.read_close_code(), WEBSOCKET_CLOSE_PROTOCOL_ERROR)
+
+    def test_invalid_utf8_text_is_closed_cleanly(self):
+        client = self.client()
+
+        client.send_invalid_utf8()
+
+        self.assertEqual(client.read_close_code(), WEBSOCKET_CLOSE_INVALID_PAYLOAD)
+
+    def test_malformed_messages_return_stable_client_errors(self):
+        client = self.client()
+
+        client.send_text("not-json")
+        invalid_json = client.read_until(lambda message: message["type"] == "error")
+        client.send_text("[]")
+        invalid_envelope = client.read_until(lambda message: message["type"] == "error")
+        client.send_json({"type": "join", "roomCode": []})
+        invalid_field = client.read_until(lambda message: message["type"] == "error")
+
+        self.assertEqual(invalid_json["message"], "Message must be valid JSON.")
+        self.assertEqual(invalid_envelope["message"], "Message must be a JSON object.")
+        self.assertEqual(invalid_field["message"], "Room code must be text.")
+
+    def test_replaced_connection_is_closed(self):
+        host = self.client()
+        old_guest = self.client()
+        new_guest = self.client()
+
+        host.send_json({"type": "create"})
+        host_joined = host.read_until(lambda message: message["type"] == "joined")
+        host.read_until(lambda message: message["type"] == "state")
+        old_guest.send_json({"type": "join", "roomCode": host_joined["roomCode"]})
+        old_joined = old_guest.read_until(lambda message: message["type"] == "joined")
+        old_guest.read_until(lambda message: message["type"] == "state")
+
+        new_guest.send_json({
+            "type": "join",
+            "roomCode": host_joined["roomCode"],
+            "player": "p2",
+            "token": old_joined["token"],
+        })
+
+        replaced = old_guest.read_until(lambda message: message["type"] == "error")
+        opcode, _ = old_guest._read_frame()
+        self.assertEqual(replaced["message"], "This seat was opened in another tab.")
+        self.assertEqual(opcode, 0x8)
+        with self.assertRaises(ConnectionError):
+            old_guest._read_exact(1)
+
+    def test_disconnected_first_seat_is_filled_and_match_restarts(self):
+        p1 = self.client()
+        p2 = self.client()
+        replacement = self.client()
+
+        p1.send_json({"type": "create"})
+        joined = p1.read_until(lambda message: message["type"] == "joined")
+        p1.read_until(lambda message: message["type"] == "state")
+        p2.send_json({"type": "join", "roomCode": joined["roomCode"]})
+        p2.read_until(lambda message: message["type"] == "joined")
+        p2.read_until(lambda message: message["type"] == "state")
+        p1.read_until(lambda message: message["type"] == "state" and message["state"]["phase"] == "choosing")
+
+        p1.send_json({"type": "choose", "gem": "a"})
+        p2.send_json({"type": "choose", "gem": "c"})
+        p1.read_until(lambda message: message["type"] == "state" and message["state"]["phase"] == "resolved")
+        p2.read_until(lambda message: message["type"] == "state" and message["state"]["phase"] == "resolved")
+        p1.close()
+        p2.read_until(
+            lambda message: message["type"] == "state" and not message["state"]["connected"]["p1"]
+        )
+
+        replacement.send_json({"type": "join", "roomCode": joined["roomCode"]})
+        replacement_joined = replacement.read_until(lambda message: message["type"] == "joined")
+        replacement_state = replacement.read_until(lambda message: message["type"] == "state")
+        p2_state = p2.read_until(
+            lambda message: (
+                message["type"] == "state"
+                and message["state"]["connected"]["p1"]
+                and message["state"]["roundNumber"] == 1
+                and message["state"]["log"] == []
+            )
+        )
+
+        self.assertEqual(replacement_joined["player"], "p1")
+        self.assertEqual(replacement_state["state"]["phase"], "choosing")
+        self.assertEqual(replacement_state["state"]["roundNumber"], 1)
+        self.assertEqual(replacement_state["state"]["log"], [])
+        self.assertEqual(
+            p2_state["state"]["collected"],
+            {"p1": empty_counts(), "p2": empty_counts()},
+        )
+        time.sleep(self.hub.auto_advance_delay * 2)
+        self.assertEqual(self.hub.rooms[joined["roomCode"]].round_index, 0)
+
+    def test_connection_cannot_create_multiple_rooms(self):
+        client = self.client()
+
+        client.send_json({"type": "create"})
+        client.read_until(lambda message: message["type"] == "joined")
+        client.read_until(lambda message: message["type"] == "state")
+        client.send_json({"type": "create"})
+        error = client.read_until(lambda message: message["type"] == "error")
+
+        self.assertIn("already in a room", error["message"])
+        self.assertEqual(len(self.hub.rooms), 1)
 
     def test_two_clients_keep_choices_hidden_until_resolution(self):
         p1 = self.client()

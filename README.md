@@ -24,17 +24,20 @@ Clarified rules:
 - After both players choose, the server broadcasts both choices and the result.
 - After a short reveal delay, the server automatically moves to the next round.
 - Restarting the match requires both players to click restart.
+- Rooms are independent of either player; invite links fill whichever seat is available.
+- A valid reconnect token preserves the current match, while a new occupant taking a disconnected seat starts a fresh match.
 - The winner is the player with the higher count of their own target gem after 8 rounds. Equal target counts produce a draw.
 
 ## Implementation Plan
 
 - Use `server.py` as a dependency-free Python HTTP/WebSocket server.
 - Keep all authoritative state on the server: room seats, private targets, hidden selections, inventories, round logs, and winner calculation.
+- Treat Player 1 and Player 2 as equal room seats rather than permanent room owners.
 - Automatically advance after each resolved round, while keeping two-player agreement for match restart.
 - Serve one browser client from `index.html`, `styles.css`, and `src/app.js`.
 - Use room codes and invite links so two browser windows or two devices on the same network can join.
-- Keep `src/game.js` as a small shared browser-side rules module for gem metadata and dependency-free rule tests.
-- Add Python unit tests for authoritative multiplayer behavior and browser tests for schedule/rule invariants.
+- Keep display-only gem metadata in `src/app.js`; all game rules remain authoritative in Python.
+- Add Python tests for game rules, multiplayer behavior, HTTP serving, and WebSocket transport.
 
 ## Run
 
@@ -128,8 +131,7 @@ This repo includes `.github/workflows/ci.yml`. The workflow:
 - Sets up Python 3.12.
 - Installs `requirements.txt`.
 - Runs the Python multiplayer/server tests.
-- Sets up Node 22.
-- Runs the JavaScript rule tests with `npm test`.
+- Sets up Node 22 and runs dependency-free browser-client runtime tests.
 
 The `requirements.txt` file is intentionally empty right now because the Python server uses only the standard library. It is still included so CI and hosting are ready for future dependencies. If a package is added later, put it in `requirements.txt`, for example:
 
@@ -159,30 +161,21 @@ Run authoritative server tests:
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
-Open dependency-free browser rule checks:
-
-```text
-http://127.0.0.1:8000/tests/browser-test.html
-```
-
-If Node and npm are available, the JavaScript rule tests can also be run with:
+Run browser-client runtime tests when Node is available:
 
 ```bash
-npm test
+node --test tests/app.test.js
 ```
-
-No package install step is required.
 
 ## Project Structure
 
 - `server.py` - HTTP server, WebSocket transport, room management, authoritative game rules.
 - `index.html` - multiplayer lobby and game screen markup.
 - `styles.css` - responsive game UI.
-- `src/app.js` - browser WebSocket client and rendering.
-- `src/game.js` - shared gem metadata and browser-testable rule helpers.
+- `src/app.js` - browser WebSocket client, display metadata, and rendering.
 - `assets/` - gem SVG artwork.
-- `.github/workflows/ci.yml` - GitHub Actions CI for Python and JavaScript tests.
+- `.github/workflows/ci.yml` - GitHub Actions CI for Python and browser-client tests.
 - `requirements.txt` - Python dependency list, intentionally empty until external packages are added.
 - `tests/test_server.py` - authoritative multiplayer unit tests.
-- `tests/game.test.js` - optional Node rule tests.
-- `tests/browser-test.html` - dependency-free browser test runner.
+- `tests/test_websocket.py` - HTTP and WebSocket integration tests.
+- `tests/app.test.js` - dependency-free browser-client runtime tests.

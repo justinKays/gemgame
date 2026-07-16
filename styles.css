@@ -526,10 +526,6 @@ input {
   color: #7a4700;
 }
 
-.next-action {
-  width: 100%;
-}
-
 .ledger {
   display: grid;
   gap: 14px;
