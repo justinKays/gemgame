@@ -91,6 +91,7 @@ Recommended next steps:
 
 - For web internet play: deploy the Python server to a VPS or platform that supports long-lived WebSockets, then serve the same frontend over HTTPS/WSS.
 - For a quick hosted prototype: Replit can run this as a published web-server app. Use Reserved VM for the simplest always-on setup; use Autoscale only with one machine unless the room state is moved out of memory.
+- For Android and iOS stores: first deploy the multiplayer server publicly, then add a configurable server URL and package the web client in a native wrapper such as Capacitor. Store icons, splash screens, privacy disclosures, signing, and release builds belong in that packaging phase.
 - For a desktop app: wrap the browser client with Tauri, Electron, or a native shell, but still use a hosted matchmaking/game server for internet multiplayer.
 - For Steam: package the desktop client, create a Steamworks app, integrate Steam sign-in/invites later if desired, and keep the game server hosted separately.
 
@@ -153,6 +154,8 @@ The build command is harmless while `requirements.txt` is empty. It becomes usef
 
 Keep the service at one instance for now. Rooms are stored in server memory, so multiple instances would split players across different room states unless room state is moved to Redis or a database.
 
+Render replaces service instances during deploys and maintenance, which closes active WebSockets. Because rooms currently live only in process memory, a replacement also removes every active room. Before treating the app as production-ready, move room state to shared storage and add heartbeat plus automatic client reconnection. Free instances can also spin down while idle, so check the current Render plan limits before public launch.
+
 ## Test
 
 Run authoritative server tests:
@@ -166,6 +169,26 @@ Run browser-client runtime tests when Node is available:
 ```bash
 node --test tests/app.test.js
 ```
+
+### Test on a phone
+
+The simplest option is to open the deployed Render URL directly on the phone. Create a room on one device, then open the invite in a second browser, private tab, or another device.
+
+For local Wi-Fi testing, run:
+
+```powershell
+python server.py --host 0.0.0.0 --port 8000
+```
+
+Find the computer's LAN IPv4 address with `ipconfig`, then open `http://<LAN-IP>:8000` on a phone connected to the same Wi-Fi. Allow Python through Windows Firewall on Private networks if the page cannot connect.
+
+Mobile regression checklist:
+
+- Test at 320 px width and in portrait and landscape orientation.
+- Close the second player's tab or enable airplane mode; the remaining player should see the paused disconnect warning and disabled gem choices.
+- Reopen the saved room URL; a token reconnect should preserve the match.
+- Have both players request a restart; the round bar should return to `0 / 8` with no completed purple segments.
+- Test a full eight-round match with a slow or unstable mobile connection.
 
 ## Project Structure
 

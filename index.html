@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#10152b">
+    <meta name="color-scheme" content="light">
+    <meta name="description" content="A private two-player gem strategy duel.">
     <title>Gem Duel</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
@@ -13,8 +16,8 @@
           <img src="./assets/gem-a.svg" alt="">
         </div>
         <div>
-          <h1>Gem Duel 1.0</h1>
-          <p id="statusText">Connecting to multiplayer server...</p>
+          <h1>Gem Duel</h1>
+          <p class="connection-status" id="statusText" aria-live="polite">Connecting to multiplayer server...</p>
         </div>
       </div>
       <div class="topbar-actions">
@@ -25,17 +28,22 @@
 
     <main>
       <section class="lobby-panel" id="lobbyPanel" aria-labelledby="lobbyTitle">
-        <div>
-          <p class="eyebrow">Multiplayer</p>
-          <h2 id="lobbyTitle">Create or join a room</h2>
-          <p class="muted">Each player uses a separate browser. Choices stay hidden until both players lock in.</p>
+        <div class="lobby-copy">
+          <p class="eyebrow">Private multiplayer</p>
+          <h2 id="lobbyTitle">Read the offer.<br>Outplay your rival.</h2>
+          <p class="muted">Create a private duel, share the room, and make eight hidden choices. If you both choose the same gem, neither player scores.</p>
+          <div class="feature-list" aria-label="Game details">
+            <span>2 players</span>
+            <span>8 rounds</span>
+            <span>Hidden picks</span>
+          </div>
         </div>
         <div class="lobby-actions">
           <button class="primary-action" id="createRoomButton" type="button">Create room</button>
           <form class="join-form" id="joinForm">
             <label for="roomCodeInput">Room code</label>
             <div class="join-row">
-              <input id="roomCodeInput" name="roomCode" autocomplete="off" maxlength="8" placeholder="ABCDE">
+              <input id="roomCodeInput" name="roomCode" autocomplete="off" autocapitalize="characters" inputmode="text" maxlength="8" placeholder="ABCDE" spellcheck="false">
               <button class="primary-action" type="submit">Join</button>
             </div>
           </form>
@@ -44,7 +52,7 @@
       </section>
 
       <section class="room-strip" id="roomStrip" hidden>
-        <div>
+        <div class="room-code-block">
           <p class="eyebrow">Room</p>
           <h2 id="roomCodeLabel">-----</h2>
         </div>
@@ -75,10 +83,37 @@
             <h2 id="boardTitle">Waiting for player 2</h2>
             <p id="roundMessage">Share the room link with the other player.</p>
           </div>
-          <div class="offer-grid" id="offerGrid" aria-label="Current round offer"></div>
+          <div class="connection-banner" id="connectionBanner" role="alert" hidden>
+            <div>
+              <strong id="connectionBannerTitle">Connection paused</strong>
+              <p id="connectionBannerMessage">Waiting for the connection to return.</p>
+            </div>
+          </div>
+          <div class="round-progress">
+            <div class="round-progress-copy">
+              <span id="roundProgressText">Match progress</span>
+              <span id="roundProgressCount">0 / 8</span>
+            </div>
+            <div class="round-progress-track" id="roundProgressTrack" role="progressbar" aria-label="Match progress"></div>
+          </div>
+          <div class="mobile-match-summary" aria-label="Quick match summary">
+            <div class="mobile-stat">
+              <span>Your target</span>
+              <strong id="ownTargetMini">—</strong>
+            </div>
+            <div class="mobile-stat">
+              <span>Your score</span>
+              <strong id="ownScoreMini">0</strong>
+            </div>
+            <div class="mobile-stat opponent-mini">
+              <span>Opponent</span>
+              <strong id="opponentReadyMini">Waiting</strong>
+            </div>
+          </div>
           <div class="choice-area">
             <div class="choice-status" id="choiceStatus">Waiting for match</div>
           </div>
+          <div class="offer-grid" id="offerGrid" aria-label="Current round offer"></div>
           <div class="result-panel" id="resultPanel" aria-live="polite"></div>
         </article>
 

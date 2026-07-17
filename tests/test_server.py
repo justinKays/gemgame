@@ -220,6 +220,10 @@ class MultiplayerPrivacyTests(unittest.TestCase):
         old_token = room.connect("p2", stale_p2_client).token
         original_seed = room.seed
         room.disconnect(stale_p2_client)
+        p1_snapshot = room.snapshot_for("p1")
+
+        self.assertEqual(p1_snapshot["occupied"], {"p1": True, "p2": True})
+        self.assertEqual(p1_snapshot["connected"], {"p1": True, "p2": False})
 
         hub.join_room(new_p2_client, room.code)
 

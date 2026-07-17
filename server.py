@@ -489,6 +489,7 @@ class GameRoom:
             "ownSelection": self.selections[player],
             "lastResult": self.log[-1] if self.log else None,
             "log": list(self.log),
+            "occupied": {player_id: bool(self.seats[player_id]) for player_id in PLAYERS},
             "connected": self.connected(),
             "winner": winner,
             "targetScores": target_scores,

@@ -13,6 +13,7 @@
   var socket = null;
   var latestState = null;
   var joinedRoom = null;
+  var lastOfferSignature = null;
 
   var elements = {
     statusText: document.getElementById("statusText"),
@@ -45,9 +46,18 @@
     phaseBadge: document.getElementById("phaseBadge"),
     boardTitle: document.getElementById("boardTitle"),
     roundMessage: document.getElementById("roundMessage"),
+    connectionBanner: document.getElementById("connectionBanner"),
+    connectionBannerTitle: document.getElementById("connectionBannerTitle"),
+    connectionBannerMessage: document.getElementById("connectionBannerMessage"),
     offerGrid: document.getElementById("offerGrid"),
     choiceStatus: document.getElementById("choiceStatus"),
     resultPanel: document.getElementById("resultPanel"),
+    roundProgressText: document.getElementById("roundProgressText"),
+    roundProgressCount: document.getElementById("roundProgressCount"),
+    roundProgressTrack: document.getElementById("roundProgressTrack"),
+    ownTargetMini: document.getElementById("ownTargetMini"),
+    ownScoreMini: document.getElementById("ownScoreMini"),
+    opponentReadyMini: document.getElementById("opponentReadyMini"),
     fairnessStrip: document.getElementById("fairnessStrip"),
     roundLog: document.getElementById("roundLog")
   };
@@ -128,6 +138,22 @@
     elements.errorText.textContent = message || "";
   }
 
+  function setConnectionStatus(message, connected) {
+    elements.statusText.textContent = message;
+    elements.statusText.className = "connection-status" + (connected ? "" : " connection-status-offline");
+  }
+
+  function showConnectionBanner(tone, title, message) {
+    elements.connectionBanner.className = "connection-banner connection-banner-" + tone;
+    elements.connectionBannerTitle.textContent = title;
+    elements.connectionBannerMessage.textContent = message;
+    elements.connectionBanner.hidden = false;
+  }
+
+  function hideConnectionBanner() {
+    elements.connectionBanner.hidden = true;
+  }
+
   function send(message) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       setError("Not connected to the multiplayer server.");
@@ -147,7 +173,7 @@
     socket = new WebSocket(protocol + "//" + window.location.host + "/ws");
 
     socket.addEventListener("open", function onOpen() {
-      elements.statusText.textContent = "Connected";
+      setConnectionStatus("Connected", true);
       setError("");
 
       if (queryRoom) {
@@ -179,9 +205,16 @@
     });
 
     socket.addEventListener("close", function onClose() {
-      elements.statusText.textContent = "Disconnected";
+      setConnectionStatus("Connection lost", false);
       if (latestState) {
-        elements.roundMessage.textContent = "Connection lost. Refresh to reconnect.";
+        var disconnectedState = Object.assign({}, latestState);
+        disconnectedState.connected = Object.assign({}, latestState.connected);
+        disconnectedState.connected[latestState.player] = false;
+        latestState = disconnectedState;
+        lastOfferSignature = null;
+        render();
+      } else {
+        setError("Connection lost. Refresh the page to reconnect.");
       }
     });
   }
@@ -243,11 +276,24 @@
 
   function renderOffer(state) {
     var canChoose = canChooseGem(state);
+    var signature = JSON.stringify([
+      state.roundIndex,
+      state.phase,
+      state.offer,
+      state.availableGems,
+      state.ownSelection,
+      canChoose
+    ]);
+    if (signature === lastOfferSignature) {
+      return;
+    }
+    lastOfferSignature = signature;
+
     elements.offerGrid.innerHTML = GEMS.map(function mapOffer(gemId) {
       var isSelected = state.ownSelection === gemId;
       var disabled = !canChoose || state.availableGems.indexOf(gemId) === -1;
       return [
-        '<button class="offer-tile' + (canChoose ? " offer-choice" : "") + (isSelected ? " selected" : "") + '" type="button" data-gem="' + gemId + '"' + (disabled ? " disabled" : "") + ' aria-label="Choose ' + gemName(gemId) + ', count ' + state.offer[gemId] + '">',
+        '<button class="offer-tile' + (canChoose ? " offer-choice" : "") + (isSelected ? " selected" : "") + '" type="button" data-gem="' + gemId + '"' + (disabled ? " disabled" : "") + ' aria-pressed="' + isSelected + '" aria-label="Choose ' + gemName(gemId) + ', count ' + state.offer[gemId] + '">',
         '<span class="offer-gem">',
         gemImage(gemId),
         '<span class="offer-count">' + state.offer[gemId] + "</span>",
@@ -258,8 +304,63 @@
     }).join("");
   }
 
+  function renderProgress(state) {
+    var totalRounds = state.totalRounds;
+    var currentRound = state.phase === "waiting"
+      ? 0
+      : Math.min(state.roundNumber, totalRounds);
+    var completedRounds = Math.min(state.log.length, totalRounds);
+    var activeRound = state.phase === "choosing" ? currentRound : 0;
+    var segments = [];
+
+    for (var index = 1; index <= totalRounds; index += 1) {
+      var segmentClass = index <= completedRounds
+        ? "complete"
+        : index === activeRound
+          ? "current"
+          : "";
+      segments.push('<span class="' + segmentClass + '" aria-hidden="true"></span>');
+    }
+
+    elements.roundProgressText.textContent = state.phase === "complete"
+      ? "Match complete"
+      : currentRound > 0
+        ? "Round " + currentRound + " of " + totalRounds
+        : "Match progress";
+    elements.roundProgressCount.textContent = completedRounds + " / " + totalRounds;
+    elements.roundProgressTrack.innerHTML = segments.join("");
+    elements.roundProgressTrack.setAttribute("aria-valuemin", "0");
+    elements.roundProgressTrack.setAttribute("aria-valuemax", String(totalRounds));
+    elements.roundProgressTrack.setAttribute("aria-valuenow", String(completedRounds));
+  }
+
+  function renderMobileSummary(state, ownTargetScore) {
+    var opponent = opponentOf(state.player);
+    var opponentOccupied = state.occupied ? state.occupied[opponent] : true;
+    var opponentStatus = !opponentOccupied
+        ? "Waiting"
+        : !state.connected[opponent]
+          ? "Offline"
+          : state.ready[opponent]
+            ? "Locked in"
+            : "Choosing";
+
+    elements.ownTargetMini.innerHTML = gemImage(state.ownTarget) + "<span>" + gemLabel(state.ownTarget) + "</span>";
+    elements.ownScoreMini.textContent = ownTargetScore;
+    elements.opponentReadyMini.textContent = opponentStatus;
+    elements.opponentReadyMini.className = opponentStatus === "Offline" ? "is-offline" : "";
+  }
+
   function renderChoices(state) {
-    if (state.phase === "waiting") {
+    var self = state.player;
+    var opponent = opponentOf(self);
+    var opponentOccupied = state.occupied ? state.occupied[opponent] : true;
+
+    if (!state.connected[self]) {
+      elements.choiceStatus.textContent = "Connection lost - refresh to reconnect";
+    } else if (opponentOccupied && !state.connected[opponent]) {
+      elements.choiceStatus.textContent = "Paused - opponent disconnected";
+    } else if (state.phase === "waiting") {
       elements.choiceStatus.textContent = "Waiting for player 2";
     } else if (state.phase === "choosing" && (!state.connected.p1 || !state.connected.p2)) {
       elements.choiceStatus.textContent = "Waiting for both players to connect";
@@ -299,10 +400,20 @@
     }
 
     if (state.phase === "choosing") {
+      var selfStatus = !state.connected[self]
+        ? "disconnected"
+        : state.ready[self]
+          ? "locked"
+          : "choosing";
+      var opponentStatus = !state.connected[opponent]
+        ? "disconnected"
+        : state.ready[opponent]
+          ? "locked"
+          : "choosing";
       elements.resultPanel.innerHTML = [
         "<h3>Selections hidden</h3>",
-        "<p>Your status: " + (state.ready[self] ? "locked" : "choosing") + ".</p>",
-        "<p>Opponent status: " + (state.ready[opponent] ? "locked" : "choosing") + ".</p>",
+        "<p>Your status: " + selfStatus + ".</p>",
+        "<p>Opponent status: " + opponentStatus + ".</p>",
         restartVotes > 0 ? "<p>Restart votes: " + restartVotes + " / 2.</p>" : ""
       ].join("");
       return;
@@ -388,13 +499,9 @@
   function renderHeader(state) {
     var self = state.player;
     var opponent = opponentOf(self);
-    elements.statusText.textContent = state.roomCode + " - " + playerLabel(self);
-    elements.selfEyebrow.textContent = playerLabel(self);
-    elements.selfTitle.textContent = "Your target";
-    elements.selfSeatBadge.textContent = self.toUpperCase();
-    elements.opponentSeatBadge.textContent = opponent.toUpperCase();
-    elements.opponentTitle.textContent = "Opponent target";
-    elements.phaseBadge.textContent = state.phase === "waiting"
+    var opponentOccupied = state.occupied ? state.occupied[opponent] : true;
+    var opponentDisconnected = opponentOccupied && !state.connected[opponent];
+    var phaseLabel = state.phase === "waiting"
       ? "Waiting"
       : state.phase === "choosing"
         ? "Choose"
@@ -402,7 +509,30 @@
           ? "Reveal"
           : "Complete";
 
-    if (state.phase === "waiting") {
+    if (!state.connected[self]) {
+      phaseLabel = "Offline";
+    } else if (opponentDisconnected) {
+      phaseLabel = "Paused";
+    }
+
+    setConnectionStatus(
+      state.connected[self] ? state.roomCode + " - " + playerLabel(self) : "Connection lost",
+      state.connected[self]
+    );
+    elements.selfEyebrow.textContent = playerLabel(self);
+    elements.selfTitle.textContent = "Your target";
+    elements.selfSeatBadge.textContent = self.toUpperCase();
+    elements.opponentSeatBadge.textContent = opponent.toUpperCase();
+    elements.opponentTitle.textContent = "Opponent target";
+    elements.phaseBadge.textContent = phaseLabel;
+
+    if (!state.connected[self]) {
+      elements.boardTitle.textContent = "Connection lost";
+      elements.roundMessage.textContent = "Refresh this page to reconnect to the room.";
+    } else if (opponentDisconnected) {
+      elements.boardTitle.textContent = "Opponent disconnected";
+      elements.roundMessage.textContent = "The match is paused until they reconnect.";
+    } else if (state.phase === "waiting") {
       elements.boardTitle.textContent = "Waiting for player 2";
       elements.roundMessage.textContent = "Share the room link with another browser.";
     } else if (state.phase === "complete") {
@@ -421,10 +551,34 @@
     }
 
     elements.restartGameButton.hidden = false;
-    elements.restartGameButton.disabled = Boolean(state.restartReady[self]) || !state.connected[opponent];
+    elements.restartGameButton.disabled = Boolean(state.restartReady[self]) ||
+      !state.connected[self] ||
+      !state.connected[opponent];
     elements.restartGameButton.textContent = state.restartReady[self]
       ? "Restart requested"
       : "Restart match";
+  }
+
+  function renderConnectionState(state) {
+    var self = state.player;
+    var opponent = opponentOf(self);
+    var opponentOccupied = state.occupied ? state.occupied[opponent] : true;
+
+    if (!state.connected[self]) {
+      showConnectionBanner(
+        "danger",
+        "You are disconnected",
+        "Your choices are disabled. Refresh this page to reconnect to the room."
+      );
+    } else if (opponentOccupied && !state.connected[opponent]) {
+      showConnectionBanner(
+        "warning",
+        "Opponent disconnected",
+        "Choices are paused. Keep this page open while they reconnect."
+      );
+    } else {
+      hideConnectionBanner();
+    }
   }
 
   function renderRoomInfo(state) {
@@ -456,6 +610,8 @@
 
     renderRoomInfo(state);
     renderHeader(state);
+    renderConnectionState(state);
+    renderProgress(state);
     renderOffer(state);
     renderChoices(state);
     renderResult(state);
@@ -465,16 +621,21 @@
     elements.targetSlot.innerHTML = renderTarget(state.ownTarget);
     elements.targetHint.textContent = "Opponent target is one of " + poolText(state.opponentTargetPool) + ".";
     elements.ownTargetScore.textContent = "Your target score: " + ownTargetScore;
+    renderMobileSummary(state, ownTargetScore);
     renderInventory(elements.ownInventory, state.collected[self]);
 
     if (state.phase === "complete") {
       elements.opponentTargetSlot.innerHTML = renderTarget(state.opponentTarget);
       elements.opponentReadyStatus.textContent = "Target score: " + state.targetScores[opponent];
+      elements.opponentReadyStatus.className = "target-score";
     } else {
       elements.opponentTargetSlot.innerHTML = renderHiddenTarget(state.opponentTargetPool);
       elements.opponentReadyStatus.textContent = state.connected[opponent]
         ? "Choice status: " + (state.ready[opponent] ? "locked" : "choosing")
         : "Opponent disconnected";
+      elements.opponentReadyStatus.className = state.connected[opponent]
+        ? "target-score"
+        : "target-score opponent-status-offline";
     }
     elements.opponentHint.textContent = "They only know your target is one of " + poolText(state.ownTargetPool) + ".";
     renderInventory(elements.opponentInventory, state.collected[opponent]);
